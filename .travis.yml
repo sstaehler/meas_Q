@@ -11,6 +11,6 @@ install:
 script:
   - pip install -v -e .
   - mkdir ~/tmp
-  - cp meas_Q/data/model4taup10.nd ~/tmp/
+  - cp pred_tstar/data/model4taup10.nd ~/tmp/
   - cd ~/tmp
-  - python -m meas_Q.meas_Q ./model4taup10.nd 200 300
+  - python -m pred_tstar.pred_tstar ./model4taup10.nd 200 300
