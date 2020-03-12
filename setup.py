@@ -17,5 +17,4 @@ setup(name='mqs_reports',
       author='Simon Stähler',
       author_email='staehler@erdw.ethz.ch',
       license='None',
-      packages=find_packages(),
-      install_requires=['obspy', 'numpy', 'scipy'])
+      packages=find_packages())
