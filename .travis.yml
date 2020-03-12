@@ -10,5 +10,6 @@ install:
 # command to run tests
 script:
   - pip install -v -e .
-  - cd ..
+  - mkdir ~/tmp
+  - cd ~/tmp
   - python -m meas_Q.meas_Q ./meas_Q/meas_Q/data/model4taup10.nd 200 300
