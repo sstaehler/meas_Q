@@ -14,6 +14,7 @@ from scipy.interpolate import interp1d
 from obspy.taup import TauPyModel
 from collections import OrderedDict
 from argparse import ArgumentParser
+from obspy.taup.taup_create import build_taup_model
 
 def define_arguments():
     helptext = 'Predict tstar from TauP model, given a S-P traveltime distance'
@@ -84,7 +85,6 @@ def calc_sens_full(model, fnam_tvel, distance, phase, depth=50.):
 
 
 def calc_tstar_tvel(model, fnam_tvel, distance, phase):
-
     tstar, time = calc_sens_full(model, fnam_tvel=fnam_tvel,
                                  distance=distance, phase=phase)
 
@@ -142,34 +142,32 @@ def get_SSmP(distance, model, tmeas, depth=50.):
 
 
 def main(fnam_nd, times_SmP, fnam_out='tstars.txt'):
-    from obspy.taup.taup_create import build_taup_model
     with open(fnam_out, 'w') as f:
-            fnam_npz = './taup_tmp/' \
-                + os.path.split(fnam_nd)[-1][:-3] + '.npz'
-            if not os.path.exists(fnam_npz):
-                build_taup_model(fnam_nd,
-                                 output_folder='./taup_tmp')
-            cache = OrderedDict()
-            model = TauPyModel(model=fnam_npz, cache=cache)
+        fnam_npz = './taup_tmp/' \
+            + os.path.split(fnam_nd)[-1][:-3] + '.npz'
+        build_taup_model(fnam_nd,
+                         output_folder='./taup_tmp')
+        cache = OrderedDict()
+        model = TauPyModel(model=fnam_npz, cache=cache)
 
-            f.write('%s ' % os.path.split(fnam_nd)[-1])
-            for tSmP in times_SmP:
-                dist = get_dist(model, tSmP=tSmP)
-                if dist is not None:
-                    tstar_P, time_P = calc_tstar_tvel(model=model,
-                                                      fnam_tvel=fnam_nd,
-                                                      distance=dist, phase='P')
-                    tstar_S, time_S = calc_tstar_tvel(model=model,
-                                                      fnam_tvel=fnam_nd,
-                                                      distance=dist, phase='S')
-                else:
-                    tstar_P = -1.
-                    tstar_S = -1.
-                if dist is None:
-                    dist = 0.
-                f.write('%5.2f %5.3f %5.3f  ' %
-                        (dist,
-                         tstar_P, tstar_S))
+        f.write('%s ' % os.path.split(fnam_nd)[-1])
+        for tSmP in times_SmP:
+            dist = get_dist(model, tSmP=tSmP)
+            if dist is not None:
+                tstar_P, time_P = calc_tstar_tvel(model=model,
+                                                  fnam_tvel=fnam_nd,
+                                                  distance=dist, phase='P')
+                tstar_S, time_S = calc_tstar_tvel(model=model,
+                                                  fnam_tvel=fnam_nd,
+                                                  distance=dist, phase='S')
+            else:
+                tstar_P = -1.
+                tstar_S = -1.
+            if dist is None:
+                dist = 0.
+            f.write('%5.2f %5.3f %5.3f  ' %
+                    (dist,
+                     tstar_P, tstar_S))
 
 if __name__== '__main__':
     args = define_arguments()
