@@ -67,16 +67,12 @@ def calc_sens_full(model, fnam_tvel, distance, phase, depth=50.):
             dist[i] = path[i][2]
             depth[i] = path[i][3]
             times[i] = path[i][1] - path[i - 1][1]
-            if depth[i] < 50.:
-                qscatinv = 1./300.
-            else:
-                qscatinv = 0
             if phase[-1] == 'S':
-                qs_inv = 1./qmu_ipl(depth[i]) + qscatinv
+                qs_inv = 1./qmu_ipl(depth[i])
                 tstar[i] = times[i] * qs_inv
             elif phase[-1] == 'P':
                 L = 4./3. * (vs_ipl(depth[i]) / vp_ipl(depth[i]))**2
-                qp_inv = L / qmu_ipl(depth[i]) + (1 - L) / 1e4 + qscatinv
+                qp_inv = L / qmu_ipl(depth[i]) + (1 - L) / 1e4
                 tstar[i] = times[i] * qp_inv
 
         return np.sum(tstar), arrivals[0].time
