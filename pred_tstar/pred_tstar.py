@@ -15,17 +15,25 @@ from obspy.taup import TauPyModel
 from collections import OrderedDict
 from argparse import ArgumentParser
 from obspy.taup.taup_create import build_taup_model
+import matplotlib.pyplot as plt
 
 def define_arguments():
     helptext = 'Predict tstar from TauP model, given a S-P traveltime distance'
     parser = ArgumentParser(description=helptext)
 
     helptext = "Input TauP file"
-    parser.add_argument('fnam_nd', help=helptext)
+    parser.add_argument('fnam_nd', nargs='+', help=helptext)
 
     helptext = "S-P arrival time differences"
-    parser.add_argument('times_SmP', nargs='+', type=float, help=helptext)
+    parser.add_argument('--times', nargs='+', type=float, help=helptext)
 
+    helptext = "Phases for travel-time difference (default: P, S)"
+    parser.add_argument('--phase_list', nargs=2, type=str,
+                        default=['P', 'S'], help=helptext)
+
+    helptext = "Plot convergence in T-X plot"
+    parser.add_argument('--plot', action="store_true", default=False,
+                        help=helptext)
     return parser.parse_args()
 
 
@@ -67,68 +75,152 @@ def calc_sens_full(model, fnam_tvel, distance, phase, depth=50.):
             dist[i] = path[i][2]
             depth[i] = path[i][3]
             times[i] = path[i][1] - path[i - 1][1]
-            if phase[-1] == 'S':
+            if phase[0] == 'S':
                 qs_inv = 1./qmu_ipl(depth[i])
                 tstar[i] = times[i] * qs_inv
-            elif phase[-1] == 'P':
+            elif phase[0] == 'P':
                 L = 4./3. * (vs_ipl(depth[i]) / vp_ipl(depth[i]))**2
                 qp_inv = L / qmu_ipl(depth[i]) + (1 - L) / 1e4
                 tstar[i] = times[i] * qp_inv
 
-        return np.sum(tstar), arrivals[0].time
+        return np.sum(tstar), arrivals[0].time, \
+               np.deg2rad(arrivals[0].ray_param)
     else:
-        return None, None
+        return None, None, None
 
 
 def calc_tstar_tvel(model, fnam_tvel, distance, phase):
-    tstar, time = calc_sens_full(model, fnam_tvel=fnam_tvel,
-                                 distance=distance, phase=phase)
+    tstar, time, p = calc_sens_full(model, fnam_tvel=fnam_tvel,
+                                    distance=distance, phase=phase)
 
     if time is None:
         time = -1.
         tstar = -1.
-    return tstar, time
+        p = -1.
+    return tstar, time, p
 
 
-def get_dist(model, tSmP):
+def get_dist(model, tSmP, phase_list, plot=False):
     from scipy.optimize import newton
     dist0 = tSmP / 6.5
     try:
         dist = newton(func=get_TSmP, fprime=get_SSmP,
-                      x0=dist0, args=(model, tSmP), maxiter=10)
+                      x0=dist0, args=(model, tSmP, phase_list, plot),
+                      maxiter=10)
     except RuntimeError:
         dist = None
+    if dist == None:
+        dist0 = tSmP / 8.
+        try:
+            dist = newton(func=get_TSmP, fprime=get_SSmP,
+                          x0=dist0,
+                          args=(model, tSmP, phase_list, plot),
+                          maxiter=10)
+        except RuntimeError:
+            dist = None
+    dists = np.arange(start=10, stop=40, step=0.3)
+
+    if plot:
+        plot_TTcurve(model, dists)
+        plt.axhline(tSmP)
+        plt.ylim(0, 300)
     return dist
 
 
-def get_TSmP(distance, model, tmeas, depth=50.):
+def plot_TTcurve(model, dists):
+    times_P = []
+    times_S = []
+    ps_P = []
+    ps_S = []
+    dists_P = []
+    dists_S = []
+    tdiffs = []
+    ddiffs = []
+    for dist in dists:
+        times_P_this = []
+        arrs = model.get_travel_times(source_depth_in_km=50,
+                                      distance_in_degree=dist,
+                                      phase_list='P')
+        for arr in arrs:
+            times_P_this.append(arr.time)
+            times_P.append(arr.time)
+            ps_P.append(np.deg2rad(arr.ray_param))
+            dists_P.append(dist)
+
+        arrs = model.get_travel_times(source_depth_in_km=50,
+                                      distance_in_degree=dist,
+                                      phase_list='S')
+        for arr in arrs:
+            for time in times_P_this:
+                tdiffs.append(arr.time - time)
+                ddiffs.append(dist)
+            times_S.append(arr.time)
+            ps_S.append(np.deg2rad(arr.ray_param))
+            dists_S.append(dist)
+
+    times_P = np.asarray(times_P)
+    times_S = np.asarray(times_S)
+    dists_P = np.asarray(dists_P)
+    dists_S = np.asarray(dists_S)
+    ps_P = np.asarray(ps_P)
+    ps_S = np.asarray(ps_S)
+
+    # sort = np.argsort(ps_P)
+    # plt.plot(times_P[sort], dists_P[sort], 'o', ls='dashed')
+    # sort = np.argsort(ps_S)
+    # plt.plot(times_S[sort], dists_S[sort], 'o', ls='dashed')
+    fig, ax = plt.subplots(nrows=3, ncols=1,
+                           sharex=True,
+                           figsize=(5, 10))
+    ax[2].plot(dists_P, times_P, 'x', label='P')
+    ax[2].plot(dists_S, times_S, 'o', label='S')
+    ax[1].plot(dists_P, ps_P, 'x', label='P')
+    ax[1].plot(dists_S, ps_S, 'o', label='S')
+    ax[0].plot(ddiffs, tdiffs, 'x')
+
+    return fig, ax
+
+
+
+
+def get_TSmP(distance, model, tmeas, phase_list,
+             plot=True, depth=50.):
+    if len(phase_list) != 2:
+        raise ValueError('Only two phases allowed')
     arrivals = model.get_travel_times(source_depth_in_km=depth,
                                       distance_in_degree=distance,
-                                      phase_list=['P', 'S'])
+                                      phase_list=phase_list)
     tP = None
     tS = None
     for arr in arrivals:
-        if arr.name == 'P' and tP is None:
+        if arr.name == phase_list[0] and tP is None:
             tP = arr.time
-        elif arr.name == 'S' and tS is None:
+        elif arr.name == phase_list[1] and tS is None:
             tS = arr.time
-
+    # print(distance, tP, tS)
     if tP is None or tS is None:
+        if plot:
+            plt.plot(distance, -1000, 'o')
         return -1000.
     else:
+        if plot:
+            plt.plot(distance, tS - tP, 'o')
         return (tS - tP) - tmeas
 
 
-def get_SSmP(distance, model, tmeas, depth=50.):
+def get_SSmP(distance, model, tmeas, phase_list, plot, depth=50.):
+    if len(phase_list) != 2:
+        raise ValueError('Only two phases allowed')
+
     arrivals = model.get_travel_times(source_depth_in_km=depth,
                                       distance_in_degree=distance,
-                                      phase_list=['P', 'S'])
+                                      phase_list=phase_list)
     sP = None
     sS = None
     for arr in arrivals:
-        if arr.name == 'P' and sP is None:
+        if arr.name == phase_list[0] and sP is None:
             sP = np.deg2rad(arr.ray_param)
-        elif arr.name == 'S' and sS is None:
+        elif arr.name == phase_list[1] and sS is None:
             sS = np.deg2rad(arr.ray_param)
 
     if sP is None or sS is None:
@@ -137,35 +229,63 @@ def get_SSmP(distance, model, tmeas, depth=50.):
         return sS - sP
 
 
-def main(fnam_nd, times_SmP, fnam_out='tstars.txt'):
-    with open(fnam_out, 'w') as f:
-        fnam_npz = './taup_tmp/' \
-            + os.path.split(fnam_nd)[-1][:-3] + '.npz'
-        build_taup_model(fnam_nd,
-                         output_folder='./taup_tmp')
-        cache = OrderedDict()
-        model = TauPyModel(model=fnam_npz, cache=cache)
+def main(fnams_nd, times, phase_list,
+         fnam_out='tstars.txt',
+         fnam_out_p='rayparams.txt',
+         fnam_out_pred='phase_predictions.txt',
+         plot=False):
+    with open(fnam_out, 'w') as f_tstar, \
+         open(fnam_out_p, 'w') as f_p,   \
+         open(fnam_out_pred, 'w') as f_pred:
+        if type(fnams_nd) is list:
+            fnams = fnams_nd
+        else:
+            fnams = [fnams_nd]
 
-        f.write('%s ' % os.path.split(fnam_nd)[-1])
-        for tSmP in times_SmP:
-            dist = get_dist(model, tSmP=tSmP)
-            if dist is not None:
-                tstar_P, time_P = calc_tstar_tvel(model=model,
-                                                  fnam_tvel=fnam_nd,
-                                                  distance=dist, phase='P')
-                tstar_S, time_S = calc_tstar_tvel(model=model,
-                                                  fnam_tvel=fnam_nd,
-                                                  distance=dist, phase='S')
-            else:
-                tstar_P = -1.
-                tstar_S = -1.
-            if dist is None:
-                dist = 0.
-            f.write('%5.2f %5.3f %5.3f  ' %
-                    (dist,
-                     tstar_P, tstar_S))
+        for fnam_nd in fnams:
+            fnam_npz = './taup_tmp/' \
+                       + os.path.split(fnam_nd)[-1][:-3] + '.npz'
+            build_taup_model(fnam_nd,
+                             output_folder='./taup_tmp')
+            cache = OrderedDict()
+            model = TauPyModel(model=fnam_npz, cache=cache)
+
+            f_tstar.write('%s ' % os.path.split(fnam_nd)[-1])
+            for tSmP in times:
+                dist = get_dist(model, tSmP=tSmP, phase_list=phase_list,
+                                plot=plot)
+                if dist is not None:
+                    tstar_P, time_P, ray_param_P = calc_tstar_tvel(model=model,
+                                                      fnam_tvel=fnam_nd,
+                                                      distance=dist,
+                                                      phase=phase_list[0])
+                    tstar_S, time_S, ray_param_S = calc_tstar_tvel(model=model,
+                                                      fnam_tvel=fnam_nd,
+                                                      distance=dist,
+                                                      phase=phase_list[1])
+                else:
+                    tstar_P = -1.
+                    tstar_S = -1.
+                    ray_param_P = -1.
+                    ray_param_S = -1.
+                if dist is None:
+                    dist = 0.
+                f_tstar.write('%5.2f %5.3f %5.3f ' %
+                              (dist, tstar_P, tstar_S))
+                f_p.write('%5.2f %5.3f %5.3f ' %
+                          (dist, ray_param_P, ray_param_S))
+                f_pred.write('%5.2f' % dist)
+                for phase in ['PP', 'SS', 'SSS', 'ScS', 'SP']:
+                    f_pred.write('%6.1f ' %
+                                 get_TSmP(distance=dist, model=model,
+                                          plot=False,
+                                          tmeas=0., phase_list=['P', phase]))
+                f_pred.write('\n')
+            f_tstar.write('\n')
 
 if __name__== '__main__':
     args = define_arguments()
-    main(fnam_nd=args.fnam_nd,
-         times_SmP=args.times_SmP)
+    main(fnams_nd=args.fnam_nd,
+         times=args.times,
+         phase_list=args.phase_list,
+         plot=args.plot)
