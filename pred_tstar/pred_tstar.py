@@ -15,6 +15,7 @@ from obspy.taup import TauPyModel
 from collections import OrderedDict
 from argparse import ArgumentParser
 from obspy.taup.taup_create import build_taup_model
+from obspy.taup.helper_classes import TauModelError
 import matplotlib.pyplot as plt
 
 def define_arguments():
@@ -52,10 +53,14 @@ def plot_path(model, ax, distance, phase_list,
     ax.set_rmax(model.model.radius_of_planet)
 
 
-def calc_sens_full(model, fnam_tvel, distance, phase, depth=50.):
-    arrivals = model.get_ray_paths(source_depth_in_km=depth,
-                                   distance_in_degree=distance,
-                                   phase_list=[phase, 'SKKKSSmP'])
+def calc_sens_full(model, fnam_tvel, distance, phase, depth=60.):
+    try:
+        arrivals = model.get_ray_paths(source_depth_in_km=depth,
+                                       distance_in_degree=distance,
+                                       phase_list=[phase, 'SKKKSSmP'])
+    except TauModelError:
+        arrivals = []
+
     if len(arrivals) > 0:
         vel_model = np.genfromtxt(fnam_tvel, invalid_raise=False).T
         depth_model = vel_model[0]
@@ -127,7 +132,7 @@ def get_dist(model, tSmP, phase_list, plot=False):
     return dist
 
 
-def plot_TTcurve(model, dists):
+def plot_TTcurve(model, dists, depth=50):
     times_P = []
     times_S = []
     ps_P = []
@@ -138,7 +143,7 @@ def plot_TTcurve(model, dists):
     ddiffs = []
     for dist in dists:
         times_P_this = []
-        arrs = model.get_travel_times(source_depth_in_km=50,
+        arrs = model.get_travel_times(source_depth_in_km=depth,
                                       distance_in_degree=dist,
                                       phase_list='P')
         for arr in arrs:
@@ -147,13 +152,13 @@ def plot_TTcurve(model, dists):
             ps_P.append(np.deg2rad(arr.ray_param))
             dists_P.append(dist)
 
-        arrs = model.get_travel_times(source_depth_in_km=50,
+        arrs = model.get_travel_times(source_depth_in_km=depth,
                                       distance_in_degree=dist,
                                       phase_list='S')
         for arr in arrs:
-            for time in times_P_this:
-                tdiffs.append(arr.time - time)
-                ddiffs.append(dist)
+            #for time in times_P_this:
+            tdiffs.append(arr.time - times_P_this[0])
+            ddiffs.append(dist)
             times_S.append(arr.time)
             ps_S.append(np.deg2rad(arr.ray_param))
             dists_S.append(dist)
@@ -181,22 +186,24 @@ def plot_TTcurve(model, dists):
     return fig, ax
 
 
-
-
 def get_TSmP(distance, model, tmeas, phase_list,
-             plot=True, depth=50.):
+             plot=True, depth=60.):
     if len(phase_list) != 2:
         raise ValueError('Only two phases allowed')
-    arrivals = model.get_travel_times(source_depth_in_km=depth,
-                                      distance_in_degree=distance,
-                                      phase_list=phase_list)
     tP = None
     tS = None
-    for arr in arrivals:
-        if arr.name == phase_list[0] and tP is None:
-            tP = arr.time
-        elif arr.name == phase_list[1] and tS is None:
-            tS = arr.time
+    try:
+        arrivals = model.get_travel_times(source_depth_in_km=depth,
+                                          distance_in_degree=distance,
+                                          phase_list=phase_list)
+    except (ValueError, TauModelError):
+        pass
+    else:
+        for arr in arrivals:
+            if arr.name == phase_list[0] and tP is None:
+                tP = arr.time
+            elif arr.name == phase_list[1] and tS is None:
+                tS = arr.time
     # print(distance, tP, tS)
     if tP is None or tS is None:
         if plot:
@@ -208,20 +215,24 @@ def get_TSmP(distance, model, tmeas, phase_list,
         return (tS - tP) - tmeas
 
 
-def get_SSmP(distance, model, tmeas, phase_list, plot, depth=50.):
+def get_SSmP(distance, model, tmeas, phase_list, plot, depth=60.):
     if len(phase_list) != 2:
         raise ValueError('Only two phases allowed')
-
-    arrivals = model.get_travel_times(source_depth_in_km=depth,
-                                      distance_in_degree=distance,
-                                      phase_list=phase_list)
+    print(depth, distance)
     sP = None
     sS = None
-    for arr in arrivals:
-        if arr.name == phase_list[0] and sP is None:
-            sP = np.deg2rad(arr.ray_param)
-        elif arr.name == phase_list[1] and sS is None:
-            sS = np.deg2rad(arr.ray_param)
+    try:
+        arrivals = model.get_travel_times(source_depth_in_km=depth,
+                                          distance_in_degree=distance,
+                                          phase_list=phase_list)
+    except (ValueError, TauModelError):
+        pass
+    else:
+        for arr in arrivals:
+            if arr.name == phase_list[0] and sP is None:
+                sP = np.deg2rad(arr.ray_param)
+            elif arr.name == phase_list[1] and sS is None:
+                sS = np.deg2rad(arr.ray_param)
 
     if sP is None or sS is None:
         return -10000.
@@ -246,7 +257,8 @@ def main(fnams_nd, times, phase_list,
             fnam_npz = './taup_tmp/' \
                        + os.path.split(fnam_nd)[-1][:-3] + '.npz'
             build_taup_model(fnam_nd,
-                             output_folder='./taup_tmp')
+                             output_folder='./taup_tmp'
+                             )
             cache = OrderedDict()
             model = TauPyModel(model=fnam_npz, cache=cache)
 
@@ -274,9 +286,9 @@ def main(fnams_nd, times, phase_list,
                               (dist, tstar_P, tstar_S))
                 f_p.write('%5.2f %5.3f %5.3f ' %
                           (dist, ray_param_P, ray_param_S))
-                f_pred.write('%5.2f' % dist)
+                f_pred.write('%5.2f ' % dist)
                 for phase in ['PP', 'SS', 'SSS', 'ScS', 'SP']:
-                    f_pred.write('%6.1f ' %
+                    f_pred.write('%7.1f ' %
                                  get_TSmP(distance=dist, model=model,
                                           plot=False,
                                           tmeas=0., phase_list=['P', phase]))
