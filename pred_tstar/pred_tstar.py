@@ -10,6 +10,7 @@
 
 import numpy as np
 import os
+import warnings
 from scipy.interpolate import interp1d
 from obspy.taup import TauPyModel
 from collections import OrderedDict
@@ -62,7 +63,9 @@ def calc_sens_full(model, fnam_tvel, distance, phase, depth=60.):
         arrivals = []
 
     if len(arrivals) > 0:
-        vel_model = np.genfromtxt(fnam_tvel, invalid_raise=False).T
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            vel_model = np.genfromtxt(fnam_tvel, invalid_raise=False).T
         depth_model = vel_model[0]
         qmu_model = vel_model[4]
         vp_model = vel_model[1]
@@ -204,7 +207,6 @@ def get_TSmP(distance, model, tmeas, phase_list,
                 tP = arr.time
             elif arr.name == phase_list[1] and tS is None:
                 tS = arr.time
-    # print(distance, tP, tS)
     if tP is None or tS is None:
         if plot:
             plt.plot(distance, -1000, 'o')
@@ -218,7 +220,6 @@ def get_TSmP(distance, model, tmeas, phase_list,
 def get_SSmP(distance, model, tmeas, phase_list, plot, depth=60.):
     if len(phase_list) != 2:
         raise ValueError('Only two phases allowed')
-    print(depth, distance)
     sP = None
     sS = None
     try:
