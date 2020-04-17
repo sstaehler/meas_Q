@@ -97,9 +97,10 @@ def calc_sens_full(model, fnam_tvel, distance, phase, depth=60.):
         return None, None, None
 
 
-def calc_tstar_tvel(model, fnam_tvel, distance, phase):
+def calc_tstar_tvel(model, fnam_tvel, distance, phase, depth):
     tstar, time, p = calc_sens_full(model, fnam_tvel=fnam_tvel,
-                                    distance=distance, phase=phase)
+                                    distance=distance, phase=phase,
+                                    depth=depth)
 
     if time is None:
         time = -1.
@@ -108,12 +109,12 @@ def calc_tstar_tvel(model, fnam_tvel, distance, phase):
     return tstar, time, p
 
 
-def get_dist(model, tSmP, phase_list, plot=False):
+def get_dist(model, tSmP, phase_list, depth, plot=False):
     from scipy.optimize import newton
     dist0 = tSmP / 6.5
     try:
         dist = newton(func=get_TSmP, fprime=get_SSmP,
-                      x0=dist0, args=(model, tSmP, phase_list, plot),
+                      x0=dist0, args=(model, tSmP, phase_list, plot, depth),
                       maxiter=10)
     except RuntimeError:
         dist = None
@@ -122,20 +123,22 @@ def get_dist(model, tSmP, phase_list, plot=False):
         try:
             dist = newton(func=get_TSmP, fprime=get_SSmP,
                           x0=dist0,
-                          args=(model, tSmP, phase_list, plot),
+                          args=(model, tSmP, phase_list, plot, depth),
                           maxiter=10)
         except RuntimeError:
             dist = None
     dists = np.arange(start=10, stop=40, step=0.3)
 
     if plot:
-        plot_TTcurve(model, dists)
         plt.axhline(tSmP)
-        plt.ylim(0, 300)
+        #plot_TTcurve(model, dists)
+        #plt.axhline(tSmP)
+        #plt.ylim(0, 300)
+        plt.show()
     return dist
 
 
-def plot_TTcurve(model, dists, depth=50):
+def plot_TTcurve(model, dists, depth=40):
     times_P = []
     times_S = []
     ps_P = []
@@ -189,12 +192,12 @@ def plot_TTcurve(model, dists, depth=50):
     return fig, ax
 
 
-def get_TSmP(distance, model, tmeas, phase_list,
-             plot=True, depth=60.):
+def get_TSmP(distance, model, tmeas, phase_list, plot, depth):
     if len(phase_list) != 2:
         raise ValueError('Only two phases allowed')
     tP = None
     tS = None
+    print(distance)
     try:
         arrivals = model.get_travel_times(source_depth_in_km=depth,
                                           distance_in_degree=distance,
@@ -217,7 +220,7 @@ def get_TSmP(distance, model, tmeas, phase_list,
         return (tS - tP) - tmeas
 
 
-def get_SSmP(distance, model, tmeas, phase_list, plot, depth=60.):
+def get_SSmP(distance, model, tmeas, phase_list, plot, depth):
     if len(phase_list) != 2:
         raise ValueError('Only two phases allowed')
     sP = None
@@ -245,6 +248,7 @@ def main(fnams_nd, times, phase_list,
          fnam_out='tstars.txt',
          fnam_out_p='rayparams.txt',
          fnam_out_pred='phase_predictions.txt',
+         depth=40.,
          plot=False):
     with open(fnam_out, 'w') as f_tstar, \
          open(fnam_out_p, 'w') as f_p,   \
@@ -266,16 +270,18 @@ def main(fnams_nd, times, phase_list,
             f_tstar.write('%s ' % os.path.split(fnam_nd)[-1])
             for tSmP in times:
                 dist = get_dist(model, tSmP=tSmP, phase_list=phase_list,
-                                plot=plot)
+                                plot=plot, depth=depth)
                 if dist is not None:
                     tstar_P, time_P, ray_param_P = calc_tstar_tvel(model=model,
                                                       fnam_tvel=fnam_nd,
                                                       distance=dist,
-                                                      phase=phase_list[0])
+                                                      phase=phase_list[0],
+                                                      depth=depth)
                     tstar_S, time_S, ray_param_S = calc_tstar_tvel(model=model,
                                                       fnam_tvel=fnam_nd,
                                                       distance=dist,
-                                                      phase=phase_list[1])
+                                                      phase=phase_list[1],
+                                                      depth=depth)
                 else:
                     tstar_P = -1.
                     tstar_S = -1.
@@ -292,7 +298,8 @@ def main(fnams_nd, times, phase_list,
                     f_pred.write('%7.1f ' %
                                  get_TSmP(distance=dist, model=model,
                                           plot=False,
-                                          tmeas=0., phase_list=['P', phase]))
+                                          tmeas=0., phase_list=['P', phase],
+                                          depth=depth))
                 f_pred.write('\n')
             f_tstar.write('\n')
 
