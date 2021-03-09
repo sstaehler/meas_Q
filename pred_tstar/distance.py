@@ -98,12 +98,11 @@ def plot_TTcurve(model, dists, depth=40):
     return fig, ax
 
 
-def get_TSmP(distance, model, tmeas, phase_list, plot, depth):
+def get_TSmP(distance, model, tmeas, phase_list, plot, depth, return_abs=False):
     if len(phase_list) != 2:
         raise ValueError('Only two phases allowed')
     tP = None
     tS = None
-    print(distance)
     try:
         arrivals = model.get_travel_times(source_depth_in_km=depth,
                                           distance_in_degree=distance,
@@ -123,7 +122,10 @@ def get_TSmP(distance, model, tmeas, phase_list, plot, depth):
     else:
         if plot:
             plt.plot(distance, tS - tP, 'o')
-        return (tS - tP) - tmeas
+        if return_abs:
+            return (tS) - tmeas
+        else:
+            return (tS - tP) - tmeas
 
 
 def get_SSmP(distance, model, tmeas, phase_list, plot, depth):
