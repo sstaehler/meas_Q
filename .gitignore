@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+/pred_tstar/rundir/taup_tmp/
+/pred_tstar/phase_predictions.txt
+/pred_tstar/rayparams.txt
+/pred_tstar/tstars.txt
